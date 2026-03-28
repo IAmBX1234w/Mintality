@@ -1,98 +1,267 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// app/(tabs)/index.tsx
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  RefreshControl,
+  TouchableOpacity,
+} from 'react-native';
+import { database } from '@/config/firebase';
+import { ref, onValue, off } from 'firebase/database';
+import { Ionicons } from '@expo/vector-icons';
+import { Platform } from 'react-native';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+interface SensorData {
+  temperature?: number;
+  humidity?: number;
+  pressure?: number;
+  timestamp?: number;
+}
 
-export default function HomeScreen() {
+interface ESP32Data {
+  status?: string;
+  lastSeen?: number;
+  sensors?: SensorData;
+  ledState?: boolean;
+  [key: string]: any; // Allow any other fields from ESP32
+}
+
+export default function DashboardScreen() {
+  const [esp32Data, setEsp32Data] = useState<ESP32Data>({});
+  const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    // Reference to your ESP32 data in Realtime Database
+    // Adjust this path to match your actual database structure
+    const esp32Ref = ref(database, 'esp32/device1');
+
+    // Listen for real-time updates
+    const unsubscribe = onValue(
+      esp32Ref,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          setEsp32Data(data);
+          setConnected(true);
+          
+          // Check if device is online (last seen within 30 seconds)
+          if (data.lastSeen) {
+            const now = Date.now();
+            const lastSeen = data.lastSeen;
+            setConnected(now - lastSeen < 30000);
+          }
+        } else {
+          setConnected(false);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Firebase read error:', error);
+        setLoading(false);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      off(esp32Ref);
+    };
+  }, []);
+
+  const formatTimestamp = (timestamp?: number) => {
+    if (!timestamp) return 'Never';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString();
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={() => setLoading(true)} />
       }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+      
+      {/* Status Card */}
+      <View style={styles.statusCard}>
+        <View style={styles.statusHeader}>
+          <View style={[styles.statusDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
+          <Text style={styles.statusText}>
+            {connected ? 'Device Online' : 'Device Offline'}
+          </Text>
+        </View>
+        <Text style={styles.lastSeenText}>
+          Last seen: {formatTimestamp(esp32Data.lastSeen)}
+        </Text>
+      </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      {/* Sensor Data Cards */}
+      <View style={styles.gridContainer}>
+        {/* Temperature */}
+        <View style={styles.sensorCard}>
+          <Ionicons name="thermometer-outline" size={32} color="#f59e0b" />
+          <Text style={styles.sensorValue}>
+            {esp32Data.sensors?.temperature?.toFixed(1) ?? '--'}°C
+          </Text>
+          <Text style={styles.sensorLabel}>Temperature</Text>
+        </View>
+
+        {/* Humidity */}
+        <View style={styles.sensorCard}>
+          <Ionicons name="water-outline" size={32} color="#3b82f6" />
+          <Text style={styles.sensorValue}>
+            {esp32Data.sensors?.humidity?.toFixed(1) ?? '--'}%
+          </Text>
+          <Text style={styles.sensorLabel}>Humidity</Text>
+        </View>
+
+        {/* Pressure */}
+        <View style={styles.sensorCard}>
+          <Ionicons name="speedometer-outline" size={32} color="#8b5cf6" />
+          <Text style={styles.sensorValue}>
+            {esp32Data.sensors?.pressure?.toFixed(0) ?? '--'} hPa
+          </Text>
+          <Text style={styles.sensorLabel}>Pressure</Text>
+        </View>
+
+        {/* LED Status */}
+        <View style={styles.sensorCard}>
+          <Ionicons 
+            name={esp32Data.ledState ? "bulb" : "bulb-outline"} 
+            size={32} 
+            color={esp32Data.ledState ? '#fbbf24' : '#6b7280'} 
+          />
+          <Text style={styles.sensorValue}>
+            {esp32Data.ledState ? 'ON' : 'OFF'}
+          </Text>
+          <Text style={styles.sensorLabel}>LED Status</Text>
+        </View>
+      </View>
+
+      {/* Raw Data Display */}
+      <View style={styles.rawDataCard}>
+        <Text style={styles.rawDataTitle}>Raw Data</Text>
+        <ScrollView horizontal>
+          <Text style={styles.rawDataText}>
+            {JSON.stringify(esp32Data, null, 2)}
+          </Text>
+        </ScrollView>
+      </View>
+
+      {/* Info Card */}
+      <View style={styles.infoCard}>
+        <Ionicons name="information-circle-outline" size={24} color="#3b82f6" />
+        <Text style={styles.infoText}>
+          This dashboard displays real-time data from your ESP32 device. 
+          Make sure your ESP32 is connected and sending data to Firebase Realtime Database.
+        </Text>
+      </View>
+
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  contentContainer: {
+    padding: 16,
+  },
+  statusCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  statusDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  statusText: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  lastSeenText: {
+    fontSize: 14,
+    color: '#94a3b8',
+    marginLeft: 24,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  sensorCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    width: '48%',
+    marginBottom: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  sensorValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  sensorLabel: {
+    fontSize: 14,
+    color: '#94a3b8',
+    textAlign: 'center',
+  },
+  rawDataCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  rawDataTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 12,
+  },
+  rawDataText: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 12,
+    color: '#10b981',
+    lineHeight: 18,
+  },
+  infoCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 16,
+    padding: 20,
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 20,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#94a3b8',
+    marginLeft: 12,
+    lineHeight: 20,
   },
 });
