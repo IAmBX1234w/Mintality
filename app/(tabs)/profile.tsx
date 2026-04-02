@@ -5,15 +5,15 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfileScreen() {
-  const { user, logout } = useAuth();
+  const { user, userData, logout } = useAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -21,10 +21,7 @@ export default function ProfileScreen() {
       'Sign Out',
       'Are you sure you want to sign out?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Sign Out',
           style: 'destructive',
@@ -43,98 +40,88 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      
       {/* Profile Header */}
       <View style={styles.profileCard}>
         <View style={styles.avatarContainer}>
           <Text style={styles.avatarText}>
-            {user?.email?.charAt(0).toUpperCase()}
+            {userData?.name?.charAt(0).toUpperCase()}
           </Text>
         </View>
         
+        <Text style={styles.name}>{userData?.name}</Text>
         <Text style={styles.email}>{user?.email}</Text>
-        <Text style={styles.userId}>ID: {user?.uid.substring(0, 12)}...</Text>
+        <Text style={styles.plantId}>Plant ID: {userData?.plantId}</Text>
       </View>
 
-      {/* Device Info */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Device Configuration</Text>
-        
-        <View style={styles.menuItem}>
-          <Ionicons name="hardware-chip" size={24} color="#3b82f6" />
-          <View style={styles.menuItemContent}>
-            <Text style={styles.menuItemText}>ESP32 Device ID</Text>
-            <Text style={styles.menuItemSubtext}>device1</Text>
-          </View>
-        </View>
-
-        <View style={styles.menuItem}>
-          <Ionicons name="wifi" size={24} color="#10b981" />
-          <View style={styles.menuItemContent}>
-            <Text style={styles.menuItemText}>Connection Status</Text>
-            <Text style={styles.menuItemSubtext}>Real-time Database</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Settings */}
+      {/* Settings Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Settings</Text>
         
         <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="notifications-outline" size={24} color="#f59e0b" />
+          <Ionicons name="notifications-outline" size={24} color="#10b981" />
           <View style={styles.menuItemContent}>
             <Text style={styles.menuItemText}>Notifications</Text>
-            <Text style={styles.menuItemSubtext}>Configure alerts</Text>
+            <Text style={styles.menuItemSubtext}>Goal reminders & updates</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="time-outline" size={24} color="#8b5cf6" />
+          <Ionicons name="time-outline" size={24} color="#3b82f6" />
           <View style={styles.menuItemContent}>
-            <Text style={styles.menuItemText}>Data Refresh Rate</Text>
-            <Text style={styles.menuItemSubtext}>Real-time</Text>
+            <Text style={styles.menuItemText}>Daily Reminders</Text>
+            <Text style={styles.menuItemSubtext}>Set goal reminder times</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="shield-checkmark-outline" size={24} color="#06b6d4" />
+          <Ionicons name="leaf-outline" size={24} color="#22c55e" />
           <View style={styles.menuItemContent}>
-            <Text style={styles.menuItemText}>Privacy & Security</Text>
-            <Text style={styles.menuItemSubtext}>Manage permissions</Text>
+            <Text style={styles.menuItemText}>Plant Settings</Text>
+            <Text style={styles.menuItemSubtext}>Watering & maintenance</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
         </TouchableOpacity>
       </View>
 
-      {/* About */}
+      {/* About Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
         
         <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="information-circle-outline" size={24} color="#94a3b8" />
-          <View style={styles.menuItemContent}>
-            <Text style={styles.menuItemText}>App Version</Text>
-            <Text style={styles.menuItemSubtext}>1.0.0</Text>
-          </View>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Ionicons name="help-circle-outline" size={24} color="#94a3b8" />
+          <Ionicons name="help-circle-outline" size={24} color="#8b5cf6" />
           <View style={styles.menuItemContent}>
             <Text style={styles.menuItemText}>Help & Support</Text>
-            <Text style={styles.menuItemSubtext}>Get assistance</Text>
+            <Text style={styles.menuItemSubtext}>Get help with your plant</Text>
           </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Ionicons name="book-outline" size={24} color="#f59e0b" />
+          <View style={styles.menuItemContent}>
+            <Text style={styles.menuItemText}>User Guide</Text>
+            <Text style={styles.menuItemSubtext}>Learn how to use the app</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem}>
+          <Ionicons name="information-circle-outline" size={24} color="#06b6d4" />
+          <View style={styles.menuItemContent}>
+            <Text style={styles.menuItemText}>About Growth Plant</Text>
+            <Text style={styles.menuItemSubtext}>Version 1.0.0</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#64748b" />
         </TouchableOpacity>
       </View>
 
       {/* Logout Button */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}>
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Ionicons name="log-out-outline" size={24} color="#fff" />
         <Text style={styles.logoutButtonText}>Sign Out</Text>
       </TouchableOpacity>
-
     </ScrollView>
   );
 }
@@ -146,6 +133,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
+    paddingTop: 60,
   },
   profileCard: {
     backgroundColor: '#1e293b',
@@ -160,7 +148,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#10b981',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -170,16 +158,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
-  email: {
-    fontSize: 18,
-    fontWeight: '600',
+  name: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#fff',
     marginBottom: 4,
   },
-  userId: {
-    fontSize: 12,
+  email: {
+    fontSize: 16,
     color: '#94a3b8',
-    fontFamily: 'monospace',
+    marginBottom: 8,
+  },
+  plantId: {
+    fontSize: 14,
+    color: '#10b981',
+    fontWeight: '600',
   },
   section: {
     backgroundColor: '#1e293b',

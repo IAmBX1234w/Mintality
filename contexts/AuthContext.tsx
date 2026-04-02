@@ -5,20 +5,33 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updateProfile
 } from 'firebase/auth';
-import { auth } from '@/config/firebase';
+import { ref, set, get } from 'firebase/database';
+import { auth, database } from '@/config/firebase';
+
+interface UserData {
+  uid: string;
+  name: string;
+  email: string;
+  plantId: string;
+  setupCompleted: boolean;
+  createdAt: number;
+}
 
 interface AuthContextType {
   user: User | null;
+  userData: UserData | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string, plantId: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  userData: null,
   loading: true,
   signUp: async () => {},
   signIn: async () => {},
@@ -35,19 +48,52 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+      
+      if (user) {
+        // Load user data from database
+        const userRef = ref(database, `users/${user.uid}`);
+        const snapshot = await get(userRef);
+        if (snapshot.exists()) {
+          setUserData(snapshot.val());
+        }
+      } else {
+        setUserData(null);
+      }
+      
       setLoading(false);
     });
 
     return unsubscribe;
   }, []);
 
-  const signUp = async (email: string, password: string) => {
-    await createUserWithEmailAndPassword(auth, email, password);
+  const signUp = async (email: string, password: string, name: string, plantId: string) => {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
+    
+    // Update display name
+    await updateProfile(user, { displayName: name });
+    
+    // Create user data in database
+    const userData: UserData = {
+      uid: user.uid,
+      name,
+      email,
+      plantId,
+      setupCompleted: true,
+      createdAt: Date.now(),
+    };
+    
+    await set(ref(database, `users/${user.uid}`), userData);
+    
+    // Link plant to user
+    await set(ref(database, `plants/${plantId}/userId`), user.uid);
+    await set(ref(database, `plants/${plantId}/linkedAt`), Date.now());
   };
 
   const signIn = async (email: string, password: string) => {
@@ -59,7 +105,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, logout }}>
+    <AuthContext.Provider value={{ user, userData, loading, signUp, signIn, logout }}>
       {children}
     </AuthContext.Provider>
   );

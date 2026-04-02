@@ -3,163 +3,388 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  TouchableOpacity,
   StyleSheet,
   ScrollView,
-  RefreshControl,
-  TouchableOpacity,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
-import { database } from '@/config/firebase';
-import { ref, onValue, off } from 'firebase/database';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { useAuth } from '@/contexts/AuthContext';
+import { database } from '@/config/firebase';
+import { ref, onValue, set, update, get } from 'firebase/database';
 
-interface SensorData {
-  temperature?: number;
-  humidity?: number;
-  pressure?: number;
-  timestamp?: number;
+interface Goal {
+  id: string;
+  text: string;
+  completed: boolean;
 }
 
-interface ESP32Data {
-  status?: string;
-  lastSeen?: number;
-  sensors?: SensorData;
-  ledState?: boolean;
-  [key: string]: any; // Allow any other fields from ESP32
+interface PlantState {
+  isOnline: boolean;
+  soilMoisture: number;
+  motorState: 'on' | 'off';
+  screenState: string;
+  lastWatered: number | null;
 }
 
-export default function DashboardScreen() {
-  const [esp32Data, setEsp32Data] = useState<ESP32Data>({});
-  const [loading, setLoading] = useState(true);
-  const [connected, setConnected] = useState(false);
+export default function HomeScreen() {
+  const { user, userData } = useAuth();
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [showWateringPopup, setShowWateringPopup] = useState(false);
+  const [plantState, setPlantState] = useState<PlantState>({
+    isOnline: false,
+    soilMoisture: 0,
+    motorState: 'off',
+    screenState: 'idle',
+    lastWatered: null,
+  });
+  const [selectedPresetGoals, setSelectedPresetGoals] = useState<string[]>([]);
+  const [customGoal, setCustomGoal] = useState('');
+  const [completionPercentage, setCompletionPercentage] = useState(0);
 
+  const presetGoals = [
+    'Complete work tasks',
+    'Exercise for 30 minutes',
+    'Read for 20 minutes',
+    'Meditate',
+    'Drink 8 glasses of water',
+    'Study for 1 hour',
+    'Clean workspace',
+    'Call a friend',
+  ];
+
+  // Check if today's goals are set
   useEffect(() => {
-    // Reference to your ESP32 data in Realtime Database
-    // Adjust this path to match your actual database structure
-    const esp32Ref = ref(database, 'esp32/device1');
+    if (!user || !userData) return;
 
-    // Listen for real-time updates
-    const unsubscribe = onValue(
-      esp32Ref,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          setEsp32Data(data);
-          setConnected(true);
-          
-          // Check if device is online (last seen within 30 seconds)
-          if (data.lastSeen) {
-            const now = Date.now();
-            const lastSeen = data.lastSeen;
-            setConnected(now - lastSeen < 30000);
-          }
-        } else {
-          setConnected(false);
-        }
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Firebase read error:', error);
-        setLoading(false);
+    const today = new Date().toISOString().split('T')[0];
+    const goalsRef = ref(database, `users/${user.uid}/goals/${today}`);
+
+    const unsubscribe = onValue(goalsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const goalsData = snapshot.val();
+        const goalsArray = Object.keys(goalsData).map((key) => ({
+          id: key,
+          ...goalsData[key],
+        }));
+        setGoals(goalsArray);
+        
+        // Calculate completion percentage
+        const completed = goalsArray.filter((g) => g.completed).length;
+        const total = goalsArray.length;
+        const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+        setCompletionPercentage(percentage);
+        
+        // Update screen state based on completion
+        updateScreenState(percentage);
+      } else {
+        // No goals set for today - show modal
+        setShowGoalModal(true);
       }
-    );
+    });
 
-    // Cleanup listener on unmount
-    return () => {
-      off(esp32Ref);
-    };
-  }, []);
+    return unsubscribe;
+  }, [user, userData]);
 
-  const formatTimestamp = (timestamp?: number) => {
-    if (!timestamp) return 'Never';
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString();
+  // Listen to plant state
+  useEffect(() => {
+    if (!userData?.plantId) return;
+
+    const plantRef = ref(database, `plants/${userData.plantId}`);
+
+    const unsubscribe = onValue(plantRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.val();
+        
+        const newPlantState: PlantState = {
+          isOnline: data.isOnline || false,
+          soilMoisture: data.soilMoisture || 0,
+          motorState: data.motorState || 'off',
+          screenState: data.screenState || 'idle',
+          lastWatered: data.lastWatered || null,
+        };
+        
+        // Check if watering just completed
+        if (plantState.motorState === 'on' && newPlantState.motorState === 'off') {
+          setShowWateringPopup(true);
+          markWateringComplete();
+        }
+        
+        setPlantState(newPlantState);
+      }
+    });
+
+    return unsubscribe;
+  }, [userData?.plantId, plantState.motorState]);
+
+  const updateScreenState = async (percentage: number) => {
+    if (!userData?.plantId) return;
+
+    let screenState = 'idle';
+    if (percentage >= 100) {
+      screenState = 'celebrating';
+    } else if (percentage >= 75) {
+      screenState = 'happy';
+    } else if (percentage >= 50) {
+      screenState = 'neutral';
+    } else if (percentage >= 25) {
+      screenState = 'waiting';
+    } else {
+      screenState = 'sad';
+    }
+
+    await update(ref(database, `plants/${userData.plantId}`), {
+      screenState,
+      completionPercentage: percentage,
+    });
+
+    // If 100% complete, trigger watering
+    if (percentage === 100) {
+      await update(ref(database, `plants/${userData.plantId}`), {
+        motorState: 'on',
+      });
+    }
   };
 
+  const markWateringComplete = async () => {
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    await update(ref(database, `users/${user.uid}/watering/${today}`), {
+      completed: true,
+      timestamp: Date.now(),
+    });
+  };
+
+  const handleSaveGoals = async () => {
+    if (selectedPresetGoals.length === 0 && !customGoal.trim()) {
+      Alert.alert('Error', 'Please select at least one goal');
+      return;
+    }
+
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const goalsData: { [key: string]: { text: string; completed: boolean } } = {};
+
+    selectedPresetGoals.forEach((goal, index) => {
+      goalsData[`goal_${index}`] = {
+        text: goal,
+        completed: false,
+      };
+    });
+
+    if (customGoal.trim()) {
+      goalsData[`goal_${selectedPresetGoals.length}`] = {
+        text: customGoal.trim(),
+        completed: false,
+      };
+    }
+
+    await set(ref(database, `users/${user.uid}/goals/${today}`), goalsData);
+    
+    setShowGoalModal(false);
+    setSelectedPresetGoals([]);
+    setCustomGoal('');
+  };
+
+  const toggleGoalCompletion = async (goalId: string) => {
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const goal = goals.find((g) => g.id === goalId);
+    
+    if (goal) {
+      await update(ref(database, `users/${user.uid}/goals/${today}/${goalId}`), {
+        completed: !goal.completed,
+      });
+    }
+  };
+
+  const togglePresetGoal = (goal: string) => {
+    if (selectedPresetGoals.includes(goal)) {
+      setSelectedPresetGoals(selectedPresetGoals.filter((g) => g !== goal));
+    } else {
+      setSelectedPresetGoals([...selectedPresetGoals, goal]);
+    }
+  };
+
+  const getPlantMoistureStatus = () => {
+    if (plantState.soilMoisture > 70) return { text: 'Well watered', color: '#10b981' };
+    if (plantState.soilMoisture > 40) return { text: 'Adequate', color: '#22c55e' };
+    if (plantState.soilMoisture > 20) return { text: 'Needs water', color: '#f59e0b' };
+    return { text: 'Very dry', color: '#ef4444' };
+  };
+
+  const moistureStatus = getPlantMoistureStatus();
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={() => setLoading(true)} />
-      }>
-      
-      {/* Status Card */}
-      <View style={styles.statusCard}>
-        <View style={styles.statusHeader}>
-          <View style={[styles.statusDot, { backgroundColor: connected ? '#10b981' : '#ef4444' }]} />
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Hello, {userData?.name}!</Text>
+          <Text style={styles.date}>{new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            month: 'long', 
+            day: 'numeric' 
+          })}</Text>
+        </View>
+        <View style={styles.plantStatus}>
+          <View style={[styles.statusDot, { 
+            backgroundColor: plantState.isOnline ? '#10b981' : '#ef4444' 
+          }]} />
           <Text style={styles.statusText}>
-            {connected ? 'Device Online' : 'Device Offline'}
+            {plantState.isOnline ? 'Plant Connected' : 'Plant Offline'}
           </Text>
-        </View>
-        <Text style={styles.lastSeenText}>
-          Last seen: {formatTimestamp(esp32Data.lastSeen)}
-        </Text>
-      </View>
-
-      {/* Sensor Data Cards */}
-      <View style={styles.gridContainer}>
-        {/* Temperature */}
-        <View style={styles.sensorCard}>
-          <Ionicons name="thermometer-outline" size={32} color="#f59e0b" />
-          <Text style={styles.sensorValue}>
-            {esp32Data.sensors?.temperature?.toFixed(1) ?? '--'}°C
-          </Text>
-          <Text style={styles.sensorLabel}>Temperature</Text>
-        </View>
-
-        {/* Humidity */}
-        <View style={styles.sensorCard}>
-          <Ionicons name="water-outline" size={32} color="#3b82f6" />
-          <Text style={styles.sensorValue}>
-            {esp32Data.sensors?.humidity?.toFixed(1) ?? '--'}%
-          </Text>
-          <Text style={styles.sensorLabel}>Humidity</Text>
-        </View>
-
-        {/* Pressure */}
-        <View style={styles.sensorCard}>
-          <Ionicons name="speedometer-outline" size={32} color="#8b5cf6" />
-          <Text style={styles.sensorValue}>
-            {esp32Data.sensors?.pressure?.toFixed(0) ?? '--'} hPa
-          </Text>
-          <Text style={styles.sensorLabel}>Pressure</Text>
-        </View>
-
-        {/* LED Status */}
-        <View style={styles.sensorCard}>
-          <Ionicons 
-            name={esp32Data.ledState ? "bulb" : "bulb-outline"} 
-            size={32} 
-            color={esp32Data.ledState ? '#fbbf24' : '#6b7280'} 
-          />
-          <Text style={styles.sensorValue}>
-            {esp32Data.ledState ? 'ON' : 'OFF'}
-          </Text>
-          <Text style={styles.sensorLabel}>LED Status</Text>
         </View>
       </View>
 
-      {/* Raw Data Display */}
-      <View style={styles.rawDataCard}>
-        <Text style={styles.rawDataTitle}>Raw Data</Text>
-        <ScrollView horizontal>
-          <Text style={styles.rawDataText}>
-            {JSON.stringify(esp32Data, null, 2)}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Progress Card */}
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressTitle}>Today's Progress</Text>
+            <Text style={styles.progressPercentage}>{completionPercentage}%</Text>
+          </View>
+          
+          <View style={styles.progressBarContainer}>
+            <View style={[styles.progressBar, { width: `${completionPercentage}%` }]} />
+          </View>
+          
+          <Text style={styles.progressSubtitle}>
+            {goals.filter(g => g.completed).length} of {goals.length} goals completed
           </Text>
-        </ScrollView>
-      </View>
+        </View>
 
-      {/* Info Card */}
-      <View style={styles.infoCard}>
-        <Ionicons name="information-circle-outline" size={24} color="#3b82f6" />
-        <Text style={styles.infoText}>
-          This dashboard displays real-time data from your ESP32 device. 
-          Make sure your ESP32 is connected and sending data to Firebase Realtime Database.
-        </Text>
-      </View>
+        {/* Plant Status Card */}
+        <View style={styles.plantCard}>
+          <View style={styles.plantCardHeader}>
+            <Ionicons name="leaf" size={32} color="#10b981" />
+            <Text style={styles.plantCardTitle}>Plant Status</Text>
+          </View>
+          
+          <View style={styles.plantInfoRow}>
+            <Text style={styles.plantInfoLabel}>Soil Moisture:</Text>
+            <Text style={[styles.plantInfoValue, { color: moistureStatus.color }]}>
+              {plantState.soilMoisture}% - {moistureStatus.text}
+            </Text>
+          </View>
+          
+          <View style={styles.plantInfoRow}>
+            <Text style={styles.plantInfoLabel}>Plant Mood:</Text>
+            <Text style={styles.plantInfoValue}>{plantState.screenState}</Text>
+          </View>
+        </View>
 
-    </ScrollView>
+        {/* Goals List */}
+        <View style={styles.goalsSection}>
+          <View style={styles.goalsSectionHeader}>
+            <Text style={styles.goalsTitle}>Today's Goals</Text>
+            <TouchableOpacity onPress={() => setShowGoalModal(true)}>
+              <Ionicons name="add-circle" size={28} color="#10b981" />
+            </TouchableOpacity>
+          </View>
+
+          {goals.map((goal) => (
+            <TouchableOpacity
+              key={goal.id}
+              style={styles.goalItem}
+              onPress={() => toggleGoalCompletion(goal.id)}>
+              <View style={[
+                styles.checkbox,
+                goal.completed && styles.checkboxCompleted,
+              ]}>
+                {goal.completed && (
+                  <Ionicons name="checkmark" size={20} color="#fff" />
+                )}
+              </View>
+              <Text style={[
+                styles.goalText,
+                goal.completed && styles.goalTextCompleted,
+              ]}>
+                {goal.text}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
+
+      {/* Goal Selection Modal */}
+      <Modal
+        visible={showGoalModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowGoalModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Set Today's Goals</Text>
+            <Text style={styles.modalSubtitle}>
+              Select goals you want to accomplish today
+            </Text>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {presetGoals.map((goal, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={[
+                    styles.presetGoalItem,
+                    selectedPresetGoals.includes(goal) && styles.presetGoalItemSelected,
+                  ]}
+                  onPress={() => togglePresetGoal(goal)}>
+                  <Text style={[
+                    styles.presetGoalText,
+                    selectedPresetGoals.includes(goal) && styles.presetGoalTextSelected,
+                  ]}>
+                    {goal}
+                  </Text>
+                  {selectedPresetGoals.includes(goal) && (
+                    <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                  )}
+                </TouchableOpacity>
+              ))}
+
+              <TextInput
+                style={styles.customGoalInput}
+                placeholder="Add custom goal..."
+                value={customGoal}
+                onChangeText={setCustomGoal}
+                placeholderTextColor="#94a3b8"
+              />
+            </ScrollView>
+
+            <TouchableOpacity style={styles.modalButton} onPress={handleSaveGoals}>
+              <Text style={styles.modalButtonText}>Save Goals</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Watering Complete Popup */}
+      <Modal
+        visible={showWateringPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowWateringPopup(false)}>
+        <View style={styles.popupOverlay}>
+          <View style={styles.popupContent}>
+            <Ionicons name="water" size={80} color="#3b82f6" />
+            <Text style={styles.popupTitle}>🎉 Plant Watered!</Text>
+            <Text style={styles.popupText}>
+              Great job completing all your goals today! Your plant has been watered.
+            </Text>
+            <TouchableOpacity
+              style={styles.popupButton}
+              onPress={() => setShowWateringPopup(false)}>
+              <Text style={styles.popupButtonText}>Awesome!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
@@ -168,100 +393,272 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0f172a',
   },
-  contentContainer: {
+  header: {
+    padding: 24,
+    paddingTop: 60,
+    backgroundColor: '#1e293b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  greeting: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  date: {
+    fontSize: 16,
+    color: '#94a3b8',
+  },
+  plantStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#94a3b8',
+  },
+  content: {
+    flex: 1,
     padding: 16,
   },
-  statusCard: {
+  progressCard: {
     backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 20,
-    marginBottom: 20,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#334155',
   },
-  statusHeader: {
+  progressHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
-  statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  statusText: {
+  progressTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#fff',
   },
-  lastSeenText: {
+  progressPercentage: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  progressBarContainer: {
+    height: 12,
+    backgroundColor: '#334155',
+    borderRadius: 6,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#10b981',
+  },
+  progressSubtitle: {
     fontSize: 14,
     color: '#94a3b8',
-    marginLeft: 24,
   },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  sensorCard: {
+  plantCard: {
     backgroundColor: '#1e293b',
     borderRadius: 16,
     padding: 20,
-    width: '48%',
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  plantCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  plantCardTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginLeft: 12,
+  },
+  plantInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  plantInfoLabel: {
+    fontSize: 16,
+    color: '#94a3b8',
+  },
+  plantInfoValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  goalsSection: {
+    marginBottom: 24,
+  },
+  goalsSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  goalsTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  goalItem: {
+    backgroundColor: '#1e293b',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#334155',
   },
-  sensorValue: {
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#334155',
+    marginRight: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxCompleted: {
+    backgroundColor: '#10b981',
+    borderColor: '#10b981',
+  },
+  goalText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#fff',
+  },
+  goalTextCompleted: {
+    color: '#94a3b8',
+    textDecorationLine: 'line-through',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '80%',
+  },
+  modalTitle: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
-    marginTop: 12,
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  sensorLabel: {
-    fontSize: 14,
+  modalSubtitle: {
+    fontSize: 16,
     color: '#94a3b8',
-    textAlign: 'center',
+    marginBottom: 24,
   },
-  rawDataCard: {
+  modalScroll: {
+    maxHeight: 400,
+    marginBottom: 24,
+  },
+  presetGoalItem: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  presetGoalItemSelected: {
+    borderColor: '#10b981',
+    backgroundColor: '#10b98110',
+  },
+  presetGoalText: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  presetGoalTextSelected: {
+    color: '#10b981',
+    fontWeight: '600',
+  },
+  customGoalInput: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#fff',
+    borderWidth: 2,
+    borderColor: '#334155',
+  },
+  modalButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  popupOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  popupContent: {
     backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 24,
+    padding: 40,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
     borderWidth: 1,
     borderColor: '#334155',
   },
-  rawDataTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  popupTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
     color: '#fff',
+    marginTop: 20,
     marginBottom: 12,
   },
-  rawDataText: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontSize: 12,
-    color: '#10b981',
-    lineHeight: 18,
-  },
-  infoCard: {
-    backgroundColor: '#1e293b',
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#334155',
-    marginBottom: 20,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 14,
+  popupText: {
+    fontSize: 16,
     color: '#94a3b8',
-    marginLeft: 12,
-    lineHeight: 20,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  popupButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+  },
+  popupButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
   },
 });

@@ -5,22 +5,22 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading) {
-      if (user) {
+      if (user && userData?.setupCompleted) {
         router.replace('/(tabs)');
       } else {
         router.replace('/(auth)/login');
       }
     }
-  }, [user, loading]);
+  }, [user, userData, loading]);
 
   return (
     <View style={styles.container}>
-      <ActivityIndicator size="large" color="#3b82f6" />
+      <ActivityIndicator size="large" color="#10b981" />
     </View>
   );
 }

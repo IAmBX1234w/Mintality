@@ -6,7 +6,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#3b82f6',
+        tabBarActiveTintColor: '#10b981',
         tabBarInactiveTintColor: '#64748b',
         tabBarStyle: {
           backgroundColor: '#1e293b',
@@ -21,22 +21,14 @@ export default function TabsLayout() {
         },
         headerTintColor: '#fff',
         headerShadowVisible: false,
+        headerShown: false,
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="speedometer" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="control"
-        options={{
-          title: 'Control',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="toggle" size={size} color={color} />
+            <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />

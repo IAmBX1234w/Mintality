@@ -1,23 +1,26 @@
 // app/(auth)/login.tsx
+import { useAuth } from '@/contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
+  View,
 } from 'react-native';
-import { useRouter, Link } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showSignupModal, setShowSignupModal] = useState(false);
   const { signIn } = useAuth();
   const router = useRouter();
 
@@ -38,13 +41,28 @@ export default function LoginScreen() {
     }
   };
 
+  const handleSignupPress = () => {
+    setShowSignupModal(true);
+  };
+
+  const handleContinueToSetup = () => {
+    setShowSignupModal(false);
+    router.push('/(setup)/loading');
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}>
+      
       <View style={styles.content}>
-        <Text style={styles.title}>ESP32 Monitor</Text>
-        <Text style={styles.subtitle}>Sign in to view your device data</Text>
+        {/* Logo/Icon */}
+        <View style={styles.logoContainer}>
+          <Ionicons name="leaf" size={80} color="#10b981" />
+        </View>
+
+        <Text style={styles.title}>Growth Plant</Text>
+        <Text style={styles.subtitle}>Grow your productivity, water your plant</Text>
 
         <TextInput
           style={styles.input}
@@ -53,7 +71,7 @@ export default function LoginScreen() {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
-          placeholderTextColor="#999"
+          placeholderTextColor="#94a3b8"
         />
 
         <TextInput
@@ -62,7 +80,7 @@ export default function LoginScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholderTextColor="#999"
+          placeholderTextColor="#94a3b8"
         />
 
         <TouchableOpacity
@@ -78,13 +96,43 @@ export default function LoginScreen() {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Don't have an account? </Text>
-          <Link href="/(auth)/signup" asChild>
-            <TouchableOpacity>
-              <Text style={styles.link}>Sign Up</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity onPress={handleSignupPress}>
+            <Text style={styles.link}>Sign Up</Text>
+          </TouchableOpacity>
         </View>
       </View>
+
+      {/* Signup Modal */}
+      <Modal
+        visible={showSignupModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSignupModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Ionicons name="information-circle" size={60} color="#10b981" />
+            
+            <Text style={styles.modalTitle}>Welcome!</Text>
+            <Text style={styles.modalText}>
+              This app is designed to work with your Growth Plant purchase. 
+              {'\n\n'}
+              Do you have a Growth Plant device?
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={handleContinueToSetup}>
+              <Text style={styles.modalButtonText}>Yes, Continue Setup</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalButtonSecondary}
+              onPress={() => setShowSignupModal(false)}>
+              <Text style={styles.modalButtonSecondaryText}>Not Yet</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -98,6 +146,10 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
   },
   title: {
     fontSize: 36,
@@ -123,7 +175,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   button: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#10b981',
     borderRadius: 12,
     padding: 18,
     alignItems: 'center',
@@ -144,8 +196,66 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   link: {
-    color: '#3b82f6',
+    color: '#10b981',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  modalText: {
+    fontSize: 16,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  modalButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  modalButtonSecondary: {
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    padding: 16,
+    width: '100%',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modalButtonSecondaryText: {
+    color: '#94a3b8',
+    fontSize: 17,
     fontWeight: '600',
   },
 });
