@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "convergent-health-iot-app",
-    "slug": "convergent-health-iot-app",
+    "name": "Mintality",
+    "slug": "Mintality",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logoSquare.png",
     "scheme": "convergenthealthiotapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,13 +13,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFF5EC",
+        "foregroundImage": "./assets/images/logoSquare.png",
+        "backgroundImage": "./assets/images/logoSquare.png",
+        "monochromeImage": "./assets/images/logoSquare.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.convergenthealthiotapp"
     },
     "web": {
       "output": "static",
@@ -38,7 +39,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

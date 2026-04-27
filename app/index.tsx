@@ -1,35 +1,39 @@
-// app/index.tsx
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { LoadingScreen } from '@/components/LoadingScreen';
 
 export default function Index() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
 
+  const [minTimePassed, setMinTimePassed] = useState(false);
+  const [fadeOut, setFadeOut] = useState(false);
+
+  // ⏳ minimum loading time
   useEffect(() => {
-    if (!loading) {
-      if (user && userData?.setupCompleted) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/(auth)/login');
-      }
+    const timer = setTimeout(() => {
+      setMinTimePassed(true);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && minTimePassed) {
+      // trigger fade first
+      setFadeOut(true);
+
+      // wait for fade animation before navigating
+      setTimeout(() => {
+        if (user && userData?.setupCompleted) {
+          router.replace('/(tabs)');
+        } else {
+          router.replace('/(auth)/login');
+        }
+      }, 500); // must match fade duration
     }
-  }, [user, userData, loading]);
+  }, [loading, minTimePassed]);
 
-  return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color="#10b981" />
-    </View>
-  );
+  return <LoadingScreen fadeOut={fadeOut} />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0f172a',
-  },
-});
